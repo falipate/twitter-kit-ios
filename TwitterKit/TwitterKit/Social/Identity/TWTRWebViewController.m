@@ -17,10 +17,11 @@
 
 #import "TWTRWebViewController.h"
 #import <TwitterCore/TWTRAuthenticationConstants.h>
+#import <WebKit/WebKit.h>
 
-@interface TWTRWebViewController () <UIWebViewDelegate>
+@interface TWTRWebViewController () <WKNavigationDelegate>
 
-@property (nonatomic, strong) UIWebView *webView;
+@property (nonatomic, strong) WKWebView *webView;
 @property (nonatomic, assign) BOOL showCancelButton;
 @property (nonatomic, copy) TWTRWebViewControllerCancelCompletion cancelCompletion;
 
@@ -65,30 +66,31 @@
 
 - (void)loadView
 {
-    [self setWebView:[[UIWebView alloc] init]];
-    [[self webView] setScalesPageToFit:YES];
-    [[self webView] setDelegate:self];
+    NSString *jScript = @"var meta = document.createElement('meta'); meta.setAttribute('name', 'viewport'); meta.setAttribute('content', 'width=device-width'); document.getElementsByTagName('head')[0].appendChild(meta);";
+    WKUserScript *wkUScript = [[WKUserScript alloc] initWithSource:jScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
+    WKUserContentController *wkUController = [[WKUserContentController alloc] init];
+    [wkUController addUserScript:wkUScript];
+    WKWebViewConfiguration *wkWebConfig = [[WKWebViewConfiguration alloc] init];
+    wkWebConfig.userContentController = wkUController;
+    [self setWebView:[[WKWebView alloc] initWithFrame:self.view.frame configuration:wkWebConfig]];
+    [[self webView] setNavigationDelegate:self];
+  
     [self setView:[self webView]];
 }
 
-#pragma mark - UIWebview delegate
+#pragma mark - WKWebView delegate
 
-- (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType
-{
-    if (![self whitelistedDomain:request]) {
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    if (![self whitelistedDomain:navigationAction.request]) {
         // Open in Safari if request is not whitelisted
-        NSLog(@"Opening link in Safari browser, as the host is not whitelisted: %@", request.URL);
-        [[UIApplication sharedApplication] openURL:request.URL];
-        return NO;
+        NSLog(@"Opening link in Safari browser, as the host is not whitelisted: %@", navigationAction.request.URL);
+        [[UIApplication sharedApplication] openURL:navigationAction.request.URL];
     }
-    if ([self shouldStartLoadWithRequest]) {
-        return [self shouldStartLoadWithRequest](self, request, navigationType);
-    }
-    return YES;
+
+    decisionHandler(WKNavigationActionPolicyAllow);
 }
 
-- (void)webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error
-{
+- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
     if (self.errorHandler) {
         self.errorHandler(error);
         self.errorHandler = nil;
